@@ -10,5 +10,7 @@ func main() {
 		Handler: mux,
 	}
 
+	mux.Handle("/", http.FileServer(http.Dir(".")))
+
 	svr.ListenAndServe()
 }
