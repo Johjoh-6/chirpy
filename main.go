@@ -2,11 +2,8 @@ package main
 
 import (
 	"chirpy/internal/database"
-	"chirpy/internal/response"
 	"chirpy/internal/utils"
 	"database/sql"
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"sync/atomic"
@@ -16,6 +13,7 @@ import (
 )
 
 type apiConfig struct {
+	Platform       string
 	fileserverHits atomic.Int32
 	profanity      *utils.Profanity
 	database       *database.Queries
@@ -25,6 +23,7 @@ func main() {
 	// load the environment variables from .env
 	godotenv.Load()
 	dbURL := os.Getenv("DB_URL")
+	platform := os.Getenv("PLATFORM")
 
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
@@ -46,6 +45,7 @@ func main() {
 			Replacer: "****",
 		},
 		database: dbQueries,
+		Platform: platform,
 	}
 
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir("./")))))
@@ -59,6 +59,8 @@ func main() {
 
 	mux.HandleFunc("POST /api/validate_chirp", apiCfg.handlerValidateChirp)
 
+	mux.HandleFunc("POST /api/users", apiCfg.handlerCreateUser)
+
 	svr.ListenAndServe()
 }
 
@@ -67,48 +69,4 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 		cfg.fileserverHits.Add(1)
 		next.ServeHTTP(w, r)
 	})
-}
-
-func (cfg *apiConfig) handlerMetric(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	tmpl := fmt.Sprintf(`
-	<html>
-	  <body>
-	    <h1>Welcome, Chirpy Admin</h1>
-	    <p>Chirpy has been visited %d times!</p>
-	  </body>
-	</html>
-	`, cfg.fileserverHits.Load())
-	w.Write([]byte(tmpl))
-}
-
-func (cfg *apiConfig) handlerReset(w http.ResponseWriter, r *http.Request) {
-	cfg.fileserverHits.Store(0)
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Reset"))
-}
-
-func (cfg *apiConfig) handlerValidateChirp(w http.ResponseWriter, r *http.Request) {
-	// read the body request
-	type chirp struct {
-		Body string `json:"body"`
-	}
-	var c chirp
-	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
-		response.RespondWithError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if len(c.Body) == 0 {
-		response.RespondWithError(w, http.StatusBadRequest, "Chirp is required")
-		return
-	}
-	if len(c.Body) > 140 {
-		response.RespondWithError(w, http.StatusBadRequest, "Chirp is too long")
-		return
-	}
-	// replace profanity
-	c.Body = cfg.profanity.RemoveProfanity(c.Body)
-
-	response.RespondWithJSON(w, http.StatusOK, map[string]string{"cleaned_body": c.Body})
 }
