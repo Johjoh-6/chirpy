@@ -2,6 +2,7 @@ package main
 
 import (
 	"chirpy/internal/auth"
+	"chirpy/internal/database"
 	"chirpy/internal/response"
 	"encoding/json"
 	"net/http"
@@ -9,9 +10,8 @@ import (
 )
 
 type UserLogin struct {
-	Email        string `json:"email"`
-	Password     string `json:"password"`
-	ExpiresInSec *int   `json:"expires_in_sec,omitempty"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
 func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
@@ -47,18 +47,73 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 	token, err := auth.MakeJWT(
 		user.ID,
 		cfg.JWTSecret,
-		time.Duration(*userLogin.ExpiresInSec)*time.Second,
+		time.Hour,
 	)
 	if err != nil {
 		response.RespondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	response.RespondWithJSON(w, http.StatusOK, User{
-		ID:        user.ID,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-		Email:     user.Email,
-		Token:     token,
+	rftString := auth.MakeRefreshToken()
+
+	refreshToken, err := cfg.database.CreateRefreshToken(r.Context(), database.CreateRefreshTokenParams{
+		UserID:    user.ID,
+		Token:     rftString,
+		ExpiresAt: time.Now().AddDate(0, 0, 60),
 	})
+	if err != nil {
+		response.RespondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	response.RespondWithJSON(w, http.StatusOK, User{
+		ID:           user.ID,
+		CreatedAt:    user.CreatedAt,
+		UpdatedAt:    user.UpdatedAt,
+		Email:        user.Email,
+		Token:        token,
+		RefreshToken: refreshToken.Token,
+	})
+}
+
+func (cfg *apiConfig) handlerRefresh(w http.ResponseWriter, r *http.Request) {
+	tokenBearer, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		response.RespondWithError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	// get the token from refresh_token
+	refreshToken, err := cfg.database.GetUserFromRefreshToken(r.Context(), tokenBearer)
+	if err != nil {
+		response.RespondWithError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	token, err := auth.MakeJWT(
+		refreshToken.ID,
+		cfg.JWTSecret,
+		time.Hour,
+	)
+	if err != nil {
+		response.RespondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	response.RespondWithJSON(w, http.StatusOK, map[string]string{
+		"token": token,
+	})
+}
+
+func (cfg *apiConfig) handlerRevoke(w http.ResponseWriter, r *http.Request) {
+	tokenBearer, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		response.RespondWithError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	if err = cfg.database.RevokeRefreshToken(r.Context(), tokenBearer); err != nil {
+		response.RespondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

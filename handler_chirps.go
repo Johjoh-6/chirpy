@@ -1,6 +1,7 @@
 package main
 
 import (
+	"chirpy/internal/auth"
 	"chirpy/internal/database"
 	"chirpy/internal/response"
 	"context"
@@ -20,14 +21,24 @@ type Chirp struct {
 	UserID    uuid.UUID `json:"user_id"`
 }
 
-type chirpInsert struct {
-	Body   string    `json:"body"`
-	UserID uuid.UUID `json:"user_id"`
-}
-
 func (cfg *apiConfig) handlerChirp(w http.ResponseWriter, r *http.Request) {
+
+	userToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		response.RespondWithError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	userID, err := auth.ValidateJWT(userToken, cfg.JWTSecret)
+	if err != nil {
+		response.RespondWithError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+
 	// read the body request
-	var c chirpInsert
+	type parameters struct {
+		Body string `json:"body"`
+	}
+	var c parameters
 	if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
 		response.RespondWithError(w, http.StatusBadRequest, err.Error())
 		return
@@ -46,7 +57,7 @@ func (cfg *apiConfig) handlerChirp(w http.ResponseWriter, r *http.Request) {
 	// store chirp in database
 	chirpCreated, err := cfg.database.CreateChirp(r.Context(), database.CreateChirpParams{
 		Body:   c.Body,
-		UserID: c.UserID,
+		UserID: userID,
 	})
 	if err != nil {
 		response.RespondWithError(w, http.StatusInternalServerError, err.Error())
@@ -105,4 +116,42 @@ func (cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request) {
 		Body:      chirp.Body,
 		UserID:    chirp.UserID,
 	})
+}
+
+func (cfg *apiConfig) handlerDeleteChirp(w http.ResponseWriter, r *http.Request) {
+	chirpIDString := r.PathValue("chirpID")
+	chirpID, err := uuid.Parse(chirpIDString)
+	if err != nil {
+		response.RespondWithError(w, http.StatusBadRequest, "chirpID is required")
+		return
+	}
+	userToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		response.RespondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	userID, err := auth.ValidateJWT(userToken, cfg.JWTSecret)
+	if err != nil {
+		response.RespondWithError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+	chirp, err := cfg.database.GetChirp(context.Background(), chirpID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			response.RespondWithError(w, http.StatusNotFound, "chirp not found")
+			return
+		}
+		response.RespondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if chirp.UserID != userID {
+		response.RespondWithError(w, http.StatusForbidden, "Forbidden")
+		return
+	}
+	err = cfg.database.DeleteChirp(context.Background(), chirpID)
+	if err != nil {
+		response.RespondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.RespondWithJSON(w, http.StatusNoContent, nil)
 }
