@@ -4,6 +4,7 @@ import (
 	"chirpy/internal/database"
 	"chirpy/internal/utils"
 	"database/sql"
+	"log"
 	"net/http"
 	"os"
 	"sync/atomic"
@@ -24,8 +25,17 @@ func main() {
 	// load the environment variables from .env
 	godotenv.Load()
 	dbURL := os.Getenv("DB_URL")
+	if dbURL == "" {
+		log.Fatal("DB_URL must be set")
+	}
 	platform := os.Getenv("PLATFORM")
+	if platform == "" {
+		log.Fatal("PLATFORM must be set")
+	}
 	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET environment variable is not set")
+	}
 
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
