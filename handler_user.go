@@ -1,6 +1,8 @@
 package main
 
 import (
+	"chirpy/internal/auth"
+	"chirpy/internal/database"
 	"chirpy/internal/response"
 	"encoding/json"
 	"net/http"
@@ -18,7 +20,8 @@ type User struct {
 
 func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
-		Email string `json:"email"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	var p parameters
@@ -30,9 +33,22 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 		response.RespondWithError(w, http.StatusBadRequest, "Email is required")
 		return
 	}
+	if len(p.Password) == 0 {
+		response.RespondWithError(w, http.StatusBadRequest, "Password is required")
+		return
+	}
 
+	// hash password
+	hashedPassword, err := auth.HashPassword(p.Password)
+	if err != nil {
+		response.RespondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	// create user in database
-	user, err := cfg.database.CreateUser(r.Context(), p.Email)
+	user, err := cfg.database.CreateUser(r.Context(), database.CreateUserParams{
+		Email:          p.Email,
+		HashedPassword: hashedPassword,
+	})
 	if err != nil {
 		response.RespondWithError(w, http.StatusInternalServerError, err.Error())
 		return

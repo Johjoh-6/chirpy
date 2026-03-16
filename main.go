@@ -63,6 +63,8 @@ func main() {
 
 	mux.HandleFunc("POST /api/users", apiCfg.handlerCreateUser)
 
+	mux.HandleFunc("POST /api/login", apiCfg.handlerLogin)
+
 	svr.ListenAndServe()
 }
 
