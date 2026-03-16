@@ -1,6 +1,7 @@
 package main
 
 import (
+	"chirpy/internal/auth"
 	"chirpy/internal/database"
 	"chirpy/internal/response"
 	"database/sql"
@@ -11,6 +12,16 @@ import (
 )
 
 func (cfg *apiConfig) handlerPolkaWH(w http.ResponseWriter, r *http.Request) {
+	apiKey, err := auth.GetAPIKey(r.Header)
+	if err != nil {
+		response.RespondWithError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	if apiKey != cfg.PolkaKey {
+		response.RespondWithError(w, http.StatusUnauthorized, "Invalid API key")
+		return
+	}
+
 	type parameters struct {
 		Event string `json:"event"`
 		Data  struct {
