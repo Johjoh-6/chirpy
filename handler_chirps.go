@@ -3,6 +3,8 @@ package main
 import (
 	"chirpy/internal/database"
 	"chirpy/internal/response"
+	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -57,5 +59,50 @@ func (cfg *apiConfig) handlerChirp(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt: chirpCreated.UpdatedAt,
 		Body:      chirpCreated.Body,
 		UserID:    chirpCreated.UserID,
+	})
+}
+
+func (cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, r *http.Request) {
+	chirps, err := cfg.database.GetChirps(context.Background())
+	if err != nil {
+		response.RespondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// change chirps from database to Chirps struct
+	var chirpResponses []Chirp
+	for _, chirp := range chirps {
+		chirpResponses = append(chirpResponses, Chirp{
+			ID:        chirp.ID,
+			CreatedAt: chirp.CreatedAt,
+			UpdatedAt: chirp.UpdatedAt,
+			Body:      chirp.Body,
+			UserID:    chirp.UserID,
+		})
+	}
+	response.RespondWithJSON(w, http.StatusOK, chirpResponses)
+}
+
+func (cfg *apiConfig) handlerGetChirp(w http.ResponseWriter, r *http.Request) {
+	chirpIDString := r.PathValue("chirpID")
+	chirpID, err := uuid.Parse(chirpIDString)
+	if err != nil {
+		response.RespondWithError(w, http.StatusBadRequest, "chirpID is required")
+		return
+	}
+	chirp, err := cfg.database.GetChirp(context.Background(), chirpID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			response.RespondWithError(w, http.StatusNotFound, "chirp not found")
+			return
+		}
+		response.RespondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response.RespondWithJSON(w, http.StatusOK, Chirp{
+		ID:        chirp.ID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+		Body:      chirp.Body,
+		UserID:    chirp.UserID,
 	})
 }
