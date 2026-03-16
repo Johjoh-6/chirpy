@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -75,9 +76,14 @@ func (cfg *apiConfig) handlerChirp(w http.ResponseWriter, r *http.Request) {
 
 func (cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, r *http.Request) {
 	authorIDString := r.URL.Query().Get("author_id")
+	sortString := r.URL.Query().Get("sort")
+	if sortString != "" && sortString != "asc" && sortString != "desc" {
+		response.RespondWithError(w, http.StatusBadRequest, "invalid sort")
+		return
+	}
 
 	authorID, err := uuid.Parse(authorIDString)
-	if err != nil {
+	if err != nil && authorIDString != "" {
 		response.RespondWithError(w, http.StatusBadRequest, "invalid author_id")
 		return
 	}
@@ -101,6 +107,13 @@ func (cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, r *http.Request) {
 			UpdatedAt: chirp.UpdatedAt,
 			Body:      chirp.Body,
 			UserID:    chirp.UserID,
+		})
+	}
+
+	// sort in memory
+	if sortString == "desc" {
+		sort.Slice(chirpResponses, func(i, j int) bool {
+			return chirpResponses[i].CreatedAt.After(chirpResponses[j].CreatedAt)
 		})
 	}
 	response.RespondWithJSON(w, http.StatusOK, chirpResponses)
