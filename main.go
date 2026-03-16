@@ -16,6 +16,7 @@ import (
 type apiConfig struct {
 	Platform       string
 	JWTSecret      string
+	PolkaKey       string
 	fileserverHits atomic.Int32
 	profanity      *utils.Profanity
 	database       *database.Queries
@@ -35,6 +36,10 @@ func main() {
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		log.Fatal("JWT_SECRET environment variable is not set")
+	}
+	polkaKey := os.Getenv("POLKA_KEY")
+	if polkaKey == "" {
+		log.Fatal("POLKA_KEY environment variable is not set")
 	}
 
 	db, err := sql.Open("postgres", dbURL)
@@ -59,6 +64,7 @@ func main() {
 		database:  dbQueries,
 		Platform:  platform,
 		JWTSecret: jwtSecret,
+		PolkaKey:  polkaKey,
 	}
 
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir("./")))))
